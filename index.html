@@ -196,6 +196,60 @@
     .missing-list { margin-top: 7px; max-height: 120px; overflow-y: auto; font-size: 0.81rem; padding-right: 16px; }
     .missing-list li { margin-bottom: 2px; }
 
+    .note-box {
+      background: #fff8e1;
+      border: 1.5px solid #f59e0b;
+      border-radius: 7px;
+      padding: 11px 15px;
+      font-size: 0.87rem;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 18px;
+    }
+
+    .grade-table-wrap {
+      overflow-x: auto;
+      margin-bottom: 18px;
+    }
+
+    .grade-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+    }
+
+    .grade-table th {
+      background: #0f3460;
+      color: white;
+      padding: 9px 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .grade-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #e8eaf0;
+      white-space: nowrap;
+    }
+
+    .grade-table tr:nth-child(even) td { background: #f7f8fa; }
+    .grade-table tr:hover td { background: #eef2ff; }
+
+    .grade-table td.zero { color: #dc3545; font-weight: 600; }
+    .grade-table td.excused { color: #888; font-style: italic; }
+
+    .grade-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.78rem;
+    }
+
+    .badge-pass { background: #d1fae5; color: #065f46; }
+    .badge-fail { background: #fee2e2; color: #991b1b; }
+    .badge-excused { background: #f3f4f6; color: #6b7280; }
+
     footer { text-align: center; padding: 20px 16px 32px; font-size: 0.8rem; color: #888; }
   </style>
 </head>
@@ -333,8 +387,15 @@
   <!-- STEP 3 -->
   <div class="card" id="step3">
     <div class="card-title"><span class="step-badge">3</span> <span data-i18n="step3Title"></span></div>
+    <div class="note-box" id="noteBox"></div>
     <div class="summary-grid" id="summaryGrid"></div>
     <div id="missingAlert"></div>
+    <div class="grade-table-wrap">
+      <table class="grade-table" id="gradeTable">
+        <thead id="gradeTableHead"></thead>
+        <tbody id="gradeTableBody"></tbody>
+      </table>
+    </div>
     <button class="btn-success" onclick="downloadResult()" data-i18n="btnDownload"></button>
   </div>
 
@@ -357,7 +418,7 @@ const translations = {
     bbFileLabel:    'ملف بلاك بورد (.xls)',
     bbUploadLabel:  'اضغط لرفع ملف بلاك بورد',
     bbUploadSub:    'يحتوي على: اسم المستخدم، الدرجات',
-    ugFileLabel:    'ملف كشف الدرجات الجامعي (.xls)',
+    ugFileLabel:    'ملف كشف الدرجات الجامعي (.xls) من أكاديميا',
     ugUploadLabel:  'اضغط لرفع كشف الدرجات',
     ugUploadSub:    'يحتوي على: رقم الطالب، اسم الطالب',
     btnParse:       'تحليل الملفات',
@@ -400,6 +461,17 @@ const translations = {
     formulaTotal:   (hasFinal) => `الدرجة الكلية = الفصلي${hasFinal ? ' + النهائي' : ''}`,
     outOf:          (n) => `من ${n}`,
     placeholder:    'تلقائي',
+    noteCheck:      'تنبيه: يرجى مراجعة الدرجات والتحقق منها قبل رفعها إلى النظام.',
+    tblNum:         'رقم الطالب',
+    tblName:        'اسم الطالب',
+    tblMid:         'الفصلي',
+    tblFin:         'النهائي',
+    tblTotal:       'الدرجة',
+    tblGrade:       'التقدير',
+    tblStatus:      'الحالة',
+    statusOk:       'تم',
+    statusMissing:  'غير موجود',
+    statusExcused:  'ع',
   },
   en: {
     headerTitle:    'Blackboard Grade Converter',
@@ -409,7 +481,7 @@ const translations = {
     bbFileLabel:    'Blackboard File (.xls)',
     bbUploadLabel:  'Click to upload Blackboard file',
     bbUploadSub:    'Contains: Username, Grades',
-    ugFileLabel:    'University Grade Sheet (.xls)',
+    ugFileLabel:    'University Grade Sheet (.xls)from Academia',
     ugUploadLabel:  'Click to upload grade sheet',
     ugUploadSub:    'Contains: Student Number, Name',
     btnParse:       'Analyse Files',
@@ -452,6 +524,17 @@ const translations = {
     formulaTotal:   (hasFinal) => `Total = Midterm${hasFinal ? ' + Final' : ''}`,
     outOf:          (n) => `/ ${n}`,
     placeholder:    'Auto',
+    noteCheck:      'Note: Please review and verify all grades before submitting them to the system.',
+    tblNum:         'Student No.',
+    tblName:        'Name',
+    tblMid:         'Midterm',
+    tblFin:         'Final',
+    tblTotal:       'Total',
+    tblGrade:       'Grade',
+    tblStatus:      'Status',
+    statusOk:       'Updated',
+    statusMissing:  'Not Found',
+    statusExcused:  'Excused',
   }
 };
 
@@ -482,6 +565,9 @@ function applyLang() {
   if (document.getElementById('step2').classList.contains('visible')) {
     updateFormulaInfo();
   }
+  // Refresh note box if step3 is visible
+  const noteBox = document.getElementById('noteBox');
+  if (noteBox) noteBox.textContent = t('noteCheck');
 }
 
 function toggleLang() {
@@ -721,41 +807,108 @@ function processGrades() {
   const colTotal      = hdr.findIndex(c => String(c).includes('الدرجة') && !String(c).includes('نهائي') && !String(c).includes('فصلي'));
   const colGrade      = hdr.findIndex(c => String(c).includes('التقدير'));
 
-  let matched = 0, totalStudents = 0;
-  const missingStudents = [];
+  let matched = 0, zeroed = 0, totalStudents = 0;
+  const tableRows = [];  // {num, name, mid, fin, total, grade, status}
 
   for (let i = 1; i < cleanRows.length; i++) {
     const row = cleanRows[i];
     const studentNum = normalizeNum(row[colStudentNum]);
     if (!studentNum) continue;
     totalStudents++;
-    if (String(row[colGrade] || '').trim() === 'ع') continue;
+
+    const studentName = String(row[1] || '');
+    const isExcused   = String(row[colGrade] || '').trim() === 'ع';
+
+    if (isExcused) {
+      // Write 0 for all grade columns
+      if (colMidterm >= 0) cleanRows[i][colMidterm] = 0;
+      if (hasFinal && colFinal >= 0) cleanRows[i][colFinal] = 0;
+      if (colTotal >= 0) cleanRows[i][colTotal] = 0;
+      if (colGrade >= 0) cleanRows[i][colGrade] = 0;
+      tableRows.push({ num: studentNum, name: studentName, mid: 0, fin: hasFinal ? 0 : '—', total: 0, grade: 'F', status: 'excused' });
+      continue;
+    }
+
     const grades = bbLookup[studentNum];
-    if (!grades) { missingStudents.push(studentNum); continue; }
+
+    if (!grades) {
+      // Not in blackboard → write 0 for all grade columns
+      zeroed++;
+      if (colMidterm >= 0) cleanRows[i][colMidterm] = 0;
+      if (hasFinal && colFinal >= 0) cleanRows[i][colFinal] = 0;
+      if (colTotal >= 0) cleanRows[i][colTotal] = 0;
+      if (colGrade >= 0) cleanRows[i][colGrade] = 'F';
+      tableRows.push({ num: studentNum, name: studentName, mid: 0, fin: hasFinal ? 0 : '—', total: 0, grade: 'F', status: 'missing' });
+      continue;
+    }
+
     matched++;
-    const midVal = grades.midterm !== null ? parseFloat(grades.midterm.toFixed(2)) : null;
-    const finVal = (hasFinal && grades.final !== null) ? parseFloat(grades.final.toFixed(2)) : null;
-    if (colMidterm >= 0 && midVal !== null) cleanRows[i][colMidterm] = midVal;
-    if (hasFinal && colFinal >= 0 && finVal !== null) cleanRows[i][colFinal] = finVal;
-    const total = (midVal || 0) + (finVal || 0);
-    if (colTotal >= 0) cleanRows[i][colTotal] = parseFloat(total.toFixed(2));
-    if (colGrade >= 0 && (midVal !== null || finVal !== null)) cleanRows[i][colGrade] = letterGrade(total);
+    const midVal = grades.midterm !== null ? Math.ceil(grades.midterm) : 0;
+    const finVal = (hasFinal && grades.final !== null) ? Math.ceil(grades.final) : (hasFinal ? 0 : null);
+
+    if (colMidterm >= 0) cleanRows[i][colMidterm] = midVal;
+    if (hasFinal && colFinal >= 0) cleanRows[i][colFinal] = finVal;
+    const total = Math.ceil(midVal + (hasFinal ? (finVal || 0) : 0));
+    if (colTotal >= 0) cleanRows[i][colTotal] = total;
+    const lg = letterGrade(total);
+    if (colGrade >= 0) cleanRows[i][colGrade] = lg;
+
+    tableRows.push({ num: studentNum, name: studentName, mid: midVal, fin: hasFinal ? finVal : '—', total, grade: lg, status: 'ok' });
   }
 
-  const newSheet = XLSX.utils.aoa_to_sheet(cleanRows);
+  // Keep only: student number, name, midterm, (final if applicable)
+  const keepCols = [colStudentNum, 1, colMidterm];
+  if (hasFinal && colFinal >= 0) keepCols.push(colFinal);
+  const outputRows = cleanRows.map(row => keepCols.map(c => row[c] !== undefined ? row[c] : ''));
+
+  const newSheet = XLSX.utils.aoa_to_sheet(outputRows);
   resultWorkbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(resultWorkbook, newSheet, sheetName);
 
+  // Note box
+  document.getElementById('noteBox').textContent = t('noteCheck');
+
+  // Summary stats
   document.getElementById('summaryGrid').innerHTML = `
     <div class="summary-box"><div class="num">${totalStudents}</div><div class="lbl">${t('totalStudents')}</div></div>
     <div class="summary-box"><div class="num" style="color:#28a745">${matched}</div><div class="lbl">${t('updated')}</div></div>
-    <div class="summary-box"><div class="num" style="color:#dc3545">${missingStudents.length}</div><div class="lbl">${t('notFound')}</div></div>
+    <div class="summary-box"><div class="num" style="color:#dc3545">${zeroed}</div><div class="lbl">${t('notFound')}</div></div>
   `;
 
+  // Missing alert
+  const missingStudents = tableRows.filter(r => r.status === 'missing').map(r => r.num);
   document.getElementById('missingAlert').innerHTML = missingStudents.length > 0
     ? `<div class="alert alert-warning"><strong>${t('warnTitle')}:</strong> ${t('warnMsg')}
         <ul class="missing-list">${missingStudents.map(s => `<li>${s}</li>`).join('')}</ul></div>`
     : `<div class="alert alert-info">${t('successMsg')}</div>`;
+
+  // Grade summary table
+  const finHeader = hasFinal ? `<th>${t('tblFin')}</th>` : '';
+  document.getElementById('gradeTableHead').innerHTML = `<tr>
+    <th>${t('tblNum')}</th>
+    <th>${t('tblName')}</th>
+    <th>${t('tblMid')}</th>
+    ${finHeader}
+    <th>${t('tblTotal')}</th>
+    <th>${t('tblGrade')}</th>
+    <th>${t('tblStatus')}</th>
+  </tr>`;
+
+  document.getElementById('gradeTableBody').innerHTML = tableRows.map(r => {
+    const finCell = hasFinal ? `<td class="${r.status === 'excused' ? 'excused' : (r.fin === 0 ? 'zero' : '')}">${r.fin}</td>` : '';
+    const isPass = typeof r.total === 'number' && r.total >= 60 && r.status !== 'excused';
+    const badgeClass = r.status === 'excused' ? 'badge-excused' : (isPass ? 'badge-pass' : 'badge-fail');
+    const statusLabel = r.status === 'ok' ? t('statusOk') : r.status === 'missing' ? t('statusMissing') : t('statusExcused');
+    return `<tr>
+      <td>${r.num}</td>
+      <td>${r.name}</td>
+      <td class="${r.status === 'excused' ? 'excused' : (r.mid === 0 && r.status !== 'ok' ? 'zero' : '')}">${r.mid}</td>
+      ${finCell}
+      <td class="${r.status === 'excused' ? 'excused' : (r.total === 0 && r.status !== 'ok' ? 'zero' : '')}">${r.total}</td>
+      <td><span class="grade-badge ${badgeClass}">${r.grade}</span></td>
+      <td><span class="grade-badge ${badgeClass}">${statusLabel}</span></td>
+    </tr>`;
+  }).join('');
 
   document.getElementById('step3').classList.add('visible');
   document.getElementById('step3').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -765,7 +918,7 @@ function processGrades() {
 
 function downloadResult() {
   if (!resultWorkbook) return;
-  XLSX.writeFile(resultWorkbook, lang === 'ar' ? 'كشف_الدرجات_المحدّث.xlsx' : 'Updated_Grade_Sheet.xlsx');
+  XLSX.writeFile(resultWorkbook, lang === 'ar' ? 'كشف_الدرجات_المحدّث.xls' : 'Updated_Grade_Sheet.xls', { bookType: 'xls' });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
