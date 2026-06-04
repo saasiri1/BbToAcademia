@@ -1,9 +1,3 @@
-/**
- * app.js
- * Main application logic for the Blackboard Grade Converter.
- */
-
-// ── State ─────────────────────────────────────────────────────────────────────
 
 let lang           = 'ar';
 let bbData         = null;
@@ -12,14 +6,12 @@ let ugHeaderRow    = -1;
 let bbColumns      = [];
 let resultWorkbook = null;
 
-// Final exam from separate file
+
 let finalFileData    = null;
 let finalFileHeaders = [];
 
-// Results state — kept so step 3 can be re-rendered on language switch
 let lastResults = null;
 
-// ── i18n ──────────────────────────────────────────────────────────────────────
 
 function t(key, ...args) {
   const val = translations[lang][key];
@@ -56,7 +48,6 @@ function toggleLang() {
   applyLang();
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const readAsArrayBuffer = f => new Promise((res, rej) => {
   const r = new FileReader();
@@ -74,7 +65,6 @@ const readAsText = (f, enc) => new Promise((res, rej) => {
 
 const normalizeNum = v => String(v || '').trim().replace(/\.0+$/, '');
 
-// ── Upload Zones ──────────────────────────────────────────────────────────────
 
 ['bb', 'ug'].forEach(id => {
   const zone   = document.getElementById(id + 'Zone');
@@ -109,7 +99,6 @@ function checkBothUploaded() {
     !(document.getElementById('bbFile').files[0] && document.getElementById('ugFile').files[0]);
 }
 
-// ── Final Section Toggles ─────────────────────────────────────────────────────
 
 function toggleFinalSource() {
   const source   = document.querySelector('input[name="finalSource"]:checked').value;
@@ -158,13 +147,6 @@ function updateFormulaInfo() {
   document.getElementById('formulaInfo').innerHTML = html;
 }
 
-// ── Grade Column Detection ────────────────────────────────────────────────────
-
-/**
- * Finds where grade columns start in the Blackboard header row.
- * Grade columns contain "[إجمالي النقاط" or a "|" ID suffix.
- * Falls back to skipping the first 3 known metadata columns.
- */
 function detectGradeColumns(headers) {
   const firstGradeIdx = headers.findIndex(h =>
     h.includes('النقاط') || h.includes('[') || /\|\d+$/.test(h)
@@ -173,13 +155,11 @@ function detectGradeColumns(headers) {
   return headers.slice(startIdx);
 }
 
-// ── Parse Blackboard + University Files ───────────────────────────────────────
 
 async function parseFiles() {
   const bbFile = document.getElementById('bbFile').files[0];
   const ugFile = document.getElementById('ugFile').files[0];
 
-  // Parse Blackboard — UTF-16 TSV with xlsx fallback
   try {
     const text  = await readAsText(bbFile, 'UTF-16LE');
     const lines = text.split('\n').filter(l => l.trim());
@@ -210,14 +190,12 @@ async function parseFiles() {
     bbColumns = detectGradeColumns(headers);
   }
 
-  // Parse university grader
   const ugBuf   = await readAsArrayBuffer(ugFile);
   ugWorkbook    = XLSX.read(ugBuf, { type: 'array', cellStyles: true });
   const ugSheet = ugWorkbook.Sheets[ugWorkbook.SheetNames[0]];
   const allRows = XLSX.utils.sheet_to_json(ugSheet, { header: 1, defval: '' });
   ugHeaderRow   = allRows.findIndex(row => row.some(c => String(c).includes('رقم الطالب')));
 
-  // Build column checklists for Midterm, Final (BB), and Extra Credit
   ['midtermCols', 'finalCols', 'extraCreditCols'].forEach(id => {
     document.getElementById(id).innerHTML = '';
   });
@@ -250,7 +228,6 @@ async function parseFiles() {
   updateFormulaInfo();
 }
 
-// ── Parse Separate Final Exam File ────────────────────────────────────────────
 
 async function parseFinalFile() {
   const file = document.getElementById('finalExamFile').files[0];
@@ -262,7 +239,6 @@ async function parseFinalFile() {
   let headers = [], rows = [];
 
   try {
-    // Try UTF-16 TSV first
     const text  = await readAsText(file, 'UTF-16LE');
     const lines = text.split('\n').filter(l => l.trim());
     const parseLine = l => l.split('\t').map(c => c.replace(/^"|"$/g, '').trim());
@@ -299,7 +275,6 @@ async function parseFinalFile() {
   document.getElementById('finalFileColSelectors').style.display = '';
 }
 
-// ── Panel Sync ────────────────────────────────────────────────────────────────
 
 function onFinChange() { syncPanels(); autoSumMax('fin', 'finalMax'); }
 function onExtChange() { syncPanels(); }
@@ -347,14 +322,12 @@ function syncPanels() {
 
   const blocked = new Set([...checkedFin, ...checkedExt]);
 
-  // Disable blocked cols in midterm list
   document.querySelectorAll('#midtermCols .col-check-item').forEach(item => {
     const cb = item.querySelector('input');
     if (blocked.has(item.dataset.col)) { cb.checked = false; cb.disabled = true; item.classList.add('disabled'); }
     else { cb.disabled = false; item.classList.remove('disabled'); }
   });
 
-  // Disable mid-checked cols in fin & extra lists
   const checkedMid = new Set();
   document.querySelectorAll('#midtermCols input[type=checkbox]:checked').forEach(cb => checkedMid.add(cb.dataset.col));
 
@@ -405,7 +378,6 @@ function deselectAll(panel) {
   else onExtChange();
 }
 
-// ── Letter Grade ──────────────────────────────────────────────────────────────
 
 function letterGrade(total) {
   if (total >= 95) return 'A+';
@@ -419,7 +391,6 @@ function letterGrade(total) {
   return 'F';
 }
 
-// ── Process Grades ────────────────────────────────────────────────────────────
 
 function processGrades() {
   const finalSource = document.querySelector('input[name="finalSource"]:checked')?.value || 'bb';
@@ -429,9 +400,7 @@ function processGrades() {
   const midtermWeight = parseFloat(document.getElementById('midtermWeight').value) || 60;
   const finalWeight   = parseFloat(document.getElementById('finalWeight').value)   || 40;
   const midMax        = parseFloat(document.getElementById('midtermMax').value);
-  const finalMax      = finalSource === 'bb'
-    ? parseFloat(document.getElementById('finalMax').value)
-    : parseFloat(document.getElementById('finalFileMax').value);
+  const finalMax      = parseFloat(document.getElementById('finalMax').value);
   const extraCap = parseFloat(document.getElementById('extraCreditCap').value) || Infinity;
 
   const selectedMidCols = [];
@@ -455,7 +424,6 @@ function processGrades() {
     const sc = document.getElementById('finalFileStudentCol').value;
     const gc = document.getElementById('finalFileGradeCol').value;
     if (!sc || !gc)                                        { alert(t('errFinFileCol')); return; }
-    if (isNaN(finalMax) || finalMax <= 0)                  { alert(t('errFinFilMax')); return; }
   }
 
   // Detect username column in Blackboard
@@ -558,7 +526,7 @@ function processGrades() {
         finVal = grades.final !== null ? Math.ceil(grades.final) : 0;
       } else {
         const rawFin = finalFileLookup[studentNum];
-        finVal = rawFin !== undefined ? Math.ceil((rawFin / finalMax) * finalWeight) : 0;
+        finVal = rawFin !== undefined ? Math.ceil(rawFin) : 0;
       }
     }
 
