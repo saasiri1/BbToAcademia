@@ -251,6 +251,22 @@
       </table>
     </div>
 
+    <div class="legend-box">
+      <span class="legend-title" data-i18n="legendTitle"></span>
+      <div class="legend-items">
+        <div class="legend-item"><span class="legend-swatch hl-fail-high"></span><span data-i18n="legendFailHigh"></span></div>
+        <div class="legend-item"><span class="legend-swatch hl-fail-low"></span><span data-i18n="legendFailLow"></span></div>
+        <div class="legend-item"><span class="legend-swatch hl-borderline"></span><span data-i18n="legendBorderline"></span></div>
+      </div>
+    </div>
+
+    <div class="disclaimer-box">
+      <label class="disclaimer-label">
+        <input type="checkbox" id="disclaimerCheck" onchange="this.closest('.disclaimer-box').classList.remove('disclaimer-error')">
+        <span data-i18n="disclaimerLabel"></span>
+      </label>
+    </div>
+
     <div class="step3-actions">
       <button class="btn-success" onclick="downloadResult()" data-i18n="btnDownload"></button>
       <button class="btn-reset"   onclick="resetAll()"       data-i18n="btnReset"></button>

@@ -870,3 +870,92 @@ footer {
   /* Field group */
   .field-group { margin-bottom: 16px; }
 }
+
+/* ── Legend ──────────────────────────────────────────────────────────────── */
+.legend-box {
+  margin: 16px 0 8px;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.legend-title {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #374151;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.08);
+  flex-shrink: 0;
+}
+.legend-swatch.hl-fail-high  { background: #ffe0e0; }
+.legend-swatch.hl-fail-low   { background: #fff0e0; }
+.legend-swatch.hl-borderline { background: #fff9e6; }
+
+html[dir="rtl"] .legend-box  { text-align: right; direction: rtl; }
+html[dir="rtl"] .legend-item { flex-direction: row-reverse; }
+
+/* ── Disclaimer Checkbox ─────────────────────────────────────────────────── */
+.disclaimer-box {
+  margin: 20px 0 12px;
+  padding: 14px 16px;
+  border: 1.5px solid #d1a84a;
+  border-radius: 8px;
+  background: #fffbf0;
+}
+html[dir="rtl"] .disclaimer-box { text-align: right; }
+
+.disclaimer-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #6b4c00;
+  line-height: 1.5;
+}
+html[dir="rtl"] .disclaimer-label {
+  direction: rtl;
+  justify-content: flex-start;
+}
+
+.disclaimer-label input[type="checkbox"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #c8972b;
+  cursor: pointer;
+}
+
+.disclaimer-box.disclaimer-error {
+  border-color: #e53935;
+  background: #fff5f5;
+}
+.disclaimer-box.disclaimer-error .disclaimer-label {
+  color: #b71c1c;
+}

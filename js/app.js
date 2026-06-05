@@ -803,6 +803,12 @@ function filterTable() {
 
 function downloadResult() {
   if (!resultWorkbook) return;
+  const checkbox = document.getElementById('disclaimerCheck');
+  if (!checkbox.checked) {
+    alert(t('disclaimerRequired'));
+    checkbox.closest('.disclaimer-box').classList.add('disclaimer-error');
+    return;
+  }
   const filename = lang === 'ar' ? 'كشف_الدرجات_المحدّث.xls' : 'Updated_Grade_Sheet.xls';
   XLSX.writeFile(resultWorkbook, filename, { bookType: 'xls' });
 }
@@ -841,6 +847,10 @@ function resetAll() {
   ['midtermCols', 'finalCols', 'extraCreditCols'].forEach(id => {
     document.getElementById(id).innerHTML = '';
   });
+
+  // Reset disclaimer
+  const dc = document.getElementById('disclaimerCheck');
+  if (dc) { dc.checked = false; dc.closest('.disclaimer-box').classList.remove('disclaimer-error'); }
 
   // Hide steps 2 & 3
   document.getElementById('step2').classList.remove('visible');
