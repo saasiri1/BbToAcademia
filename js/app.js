@@ -156,15 +156,25 @@ function detectGradeColumns(headers) {
 }
 
 
+function isBbLike(headers) {
+  return headers.some(h => String(h).includes('النقاط') || String(h).includes('[') || /\|\d+$/.test(String(h)));
+}
+function isAcademiaLike(rows) {
+  return rows.some(row => row.some(c => String(c).includes('رقم الطالب')));
+}
+
 async function parseFiles() {
   const bbFile = document.getElementById('bbFile').files[0];
   const ugFile = document.getElementById('ugFile').files[0];
+
+  let bbHeaders = [];
 
   try {
     const text  = await readAsText(bbFile, 'UTF-16LE');
     const lines = text.split('\n').filter(l => l.trim());
     const parseLine = l => l.split('\t').map(c => c.replace(/^"|"$/g, '').trim());
     const headers = parseLine(lines[0]);
+    bbHeaders = headers;
 
     bbData = lines.slice(1).map(line => {
       const vals = parseLine(line);
@@ -179,7 +189,8 @@ async function parseFiles() {
     const wb      = XLSX.read(buf, { type: 'array' });
     const ws      = wb.Sheets[wb.SheetNames[0]];
     const rows    = XLSX.utils.sheet_to_json(ws, { header: 1 });
-    const headers = rows[0];
+    const headers = (rows[0] || []).map(String);
+    bbHeaders = headers;
 
     bbData = rows.slice(1).map(vals => {
       const row = {};
@@ -195,6 +206,33 @@ async function parseFiles() {
   const ugSheet = ugWorkbook.Sheets[ugWorkbook.SheetNames[0]];
   const allRows = XLSX.utils.sheet_to_json(ugSheet, { header: 1, defval: '' });
   ugHeaderRow   = allRows.findIndex(row => row.some(c => String(c).includes('رقم الطالب')));
+
+  // ── File validation ──────────────────────────────────────────────────────────
+  const ugLooksLikeBb       = isBbLike(allRows[0] || []);
+  const bbLooksLikeAcademia = isAcademiaLike([bbHeaders]);
+  const hasUsername         = bbData.length > 0 && Object.keys(bbData[0]).some(k =>
+    k.includes('اسم المستخدم') || k.toLowerCase().includes('username'));
+
+  if (ugLooksLikeBb && bbLooksLikeAcademia) {
+    alert(t('errFilesSwapped'));
+    bbData = null; ugWorkbook = null; return;
+  }
+  if (ugLooksLikeBb) {
+    alert(t('errUgIsBb'));
+    bbData = null; ugWorkbook = null; return;
+  }
+  if (bbLooksLikeAcademia) {
+    alert(t('errBbIsUg'));
+    bbData = null; ugWorkbook = null; return;
+  }
+  if (!hasUsername || bbColumns.length === 0) {
+    alert(t('errBbInvalid'));
+    bbData = null; ugWorkbook = null; return;
+  }
+  if (ugHeaderRow === -1) {
+    alert(t('errUgInvalid'));
+    bbData = null; ugWorkbook = null; return;
+  }
 
   ['midtermCols', 'finalCols', 'extraCreditCols'].forEach(id => {
     document.getElementById(id).innerHTML = '';
@@ -667,11 +705,13 @@ function renderStep3() {
 
 function rowHighlightClass(r) {
   if (r.status === 'excused' || typeof r.total !== 'number') return '';
-  const t = r.total;
-  if (t >= 50 && t <= 54) return 'hl-close-low';
-  if (t >= 55 && t <= 59) return 'hl-close';
-  const ones = Math.floor(t) % 10;
-  if (ones === 4 || ones === 9) return 'hl-borderline';
+  const total = r.total;
+  if (total >= 55 && total <= 59) return 'hl-fail-high';
+  if (total >= 50 && total <= 54) return 'hl-fail-low';
+  if (total >= 60) {
+    const ones = Math.floor(total) % 10;
+    if (ones === 4 || ones === 9) return 'hl-borderline';
+  }
   return '';
 }
 

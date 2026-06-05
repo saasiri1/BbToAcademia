@@ -644,14 +644,14 @@ select:focus {
 
 .grade-table tr:last-child td { border-bottom: none; }
 .grade-table tbody tr:hover td { background: #f5f8ff; }
-.grade-table tbody tr.hl-borderline:hover td { background: #fff8e6; }
-.grade-table tbody tr.hl-close:hover td      { background: #e6f9ef; }
-.grade-table tbody tr.hl-close-low:hover td  { background: #fff0e6; }
+.grade-table tbody tr.hl-borderline:hover td { background: #fff3cd; }
+.grade-table tbody tr.hl-fail-high:hover td  { background: #ffc9c9; }
+.grade-table tbody tr.hl-fail-low:hover td   { background: #ffe5cc; }
 
 /* Row highlights */
-.grade-table tbody tr.hl-borderline td { background: #fffbec; }
-.grade-table tbody tr.hl-close td      { background: #edfaf3; }
-.grade-table tbody tr.hl-close-low td  { background: #fff5ec; }
+.grade-table tbody tr.hl-borderline td { background: #fff9e6; }
+.grade-table tbody tr.hl-fail-high td  { background: #ffe0e0; }
+.grade-table tbody tr.hl-fail-low td   { background: #fff0e0; }
 
 /* Zero / excused */
 .grade-table td.zero    { color: #dc2626; font-weight: 700; }
