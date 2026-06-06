@@ -644,15 +644,17 @@ select:focus {
 
 .grade-table tr:last-child td { border-bottom: none; }
 .grade-table tbody tr:hover td { background: #f5f8ff; }
-.grade-table tbody tr.hl-borderline:hover td { background: #0b5c1b; }
-.grade-table tbody tr.hl-fail-high:hover td  { background: #f49797; }
-.grade-table tbody tr.hl-fail-low:hover td   { background: #ffe5cc; }
+/* Borderline (close to next grade) - Green */
+.grade-table tbody tr.hl-borderline td { background: #d1fae5; }
+.grade-table tbody tr.hl-borderline:hover td { background: #a7f3d0; }
 
-/* Row highlights */
-.grade-table tbody tr.hl-borderline td { background: #96fa94; }
-.grade-table tbody tr.hl-fail-high td  { background: #f9b8b8; }
-.grade-table tbody tr.hl-fail-low td   { background: #fff0e0; }
+/* High-risk fail (55-58) - Red */
+.grade-table tbody tr.hl-fail-high td { background: #fee2e2; }
+.grade-table tbody tr.hl-fail-high:hover td { background: #fecaca; }
 
+/* Low-risk fail (50-54) - Orange */
+.grade-table tbody tr.hl-fail-low td { background: #ffedd5; }
+.grade-table tbody tr.hl-fail-low:hover td { background: #fed7aa; }
 /* Zero / excused */
 .grade-table td.zero    { color: #dc2626; font-weight: 700; }
 .grade-table td.excused { color: #b0b7c3; }
@@ -912,9 +914,10 @@ footer {
   border: 1px solid rgba(0,0,0,0.08);
   flex-shrink: 0;
 }
-.legend-swatch.hl-fail-high  { background: #ffe0e0; }
-.legend-swatch.hl-fail-low   { background: #fff0e0; }
-.legend-swatch.hl-borderline { background: #fff9e6; }
+.legend-swatch.hl-fail-high  { background: #fee2e2; }
+.legend-swatch.hl-fail-low   { background: #ffedd5; }
+.legend-swatch.hl-borderline { background: #d1fae5; }
+
 
 html[dir="rtl"] .legend-box  { text-align: right; direction: rtl; }
 html[dir="rtl"] .legend-item { flex-direction: row-reverse; }
