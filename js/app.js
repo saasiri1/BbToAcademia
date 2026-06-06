@@ -63,7 +63,23 @@ const readAsText = (f, enc) => new Promise((res, rej) => {
   r.readAsText(f, enc);
 });
 
-const normalizeNum = v => String(v || '').trim().replace(/\.0+$/, '');
+// Strip zero-width / non-breaking Unicode spaces, trim, remove trailing .0
+const normalizeNum = v =>
+  String(v == null ? '' : v)
+    .replace(/[​-‍﻿ ]/g, '')
+    .trim()
+    .replace(/\.0+$/, '');
+
+// Round a grade value according to the chosen mode.
+// Supported modes: 'round' (default), 'ceil', 'floor', 'none'
+function roundGrade(value, mode) {
+  switch (mode) {
+    case 'ceil':  return Math.ceil(value);
+    case 'floor': return Math.floor(value);
+    case 'none':  return value;
+    default:      return Math.round(value);
+  }
+}
 
 
 ['bb', 'ug'].forEach(id => {
@@ -240,8 +256,10 @@ async function parseFiles() {
 
   bbColumns.forEach((col, idx) => {
     if (!col) return;
-    const m      = col.match(/النقاط:\s*([\d.]+)/);
-    const maxPts = m ? parseFloat(m[1]) : null;
+    // Support both Arabic format "النقاط: 20" and English format "Total Pts: 20"
+    // Also handles "Total Pts: up to 35" (capture group 1 = Arabic, group 2 = English)
+    const m      = col.match(/النقاط:\s*([\d.]+)|Total Pts:\s*(?:up to\s*)?([\d.]+)/i);
+    const maxPts = m ? parseFloat(m[1] ?? m[2]) : null;
     const short  = col.length > 65 ? col.substring(0, 62) + '...' : col;
     const maxLabel = maxPts !== null ? `<span class="col-max">${t('outOf', maxPts)}</span>` : '';
 
@@ -276,28 +294,48 @@ async function parseFinalFile() {
 
   let headers = [], rows = [];
 
-  try {
-    const text  = await readAsText(file, 'UTF-16LE');
-    const lines = text.split('\n').filter(l => l.trim());
-    const parseLine = l => l.split('\t').map(c => c.replace(/^"|"$/g, '').trim());
-    headers = parseLine(lines[0]);
-    rows = lines.slice(1).map(line => {
-      const vals = parseLine(line);
-      const row  = {};
-      headers.forEach((h, i) => row[h] = vals[i] || '');
-      return row;
-    }).filter(r => r[headers[0]]);
-  } catch {
+  // .xlsx files are ZIP-based binaries — readAsText succeeds but returns garbage,
+  // so we must route them directly to the XLSX binary parser.
+  const isBinary = /\.xlsx$/i.test(file.name);
+
+  if (isBinary) {
+    // Binary XLSX path (also handles real .xls binary workbooks)
     const buf = await readAsArrayBuffer(file);
     const wb  = XLSX.read(buf, { type: 'array' });
     const ws  = wb.Sheets[wb.SheetNames[0]];
     const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    headers   = raw[0].map(String);
+    headers   = (raw[0] || []).map(String);
     rows = raw.slice(1).map(vals => {
       const row = {};
       headers.forEach((h, i) => row[h] = vals[i] !== undefined ? String(vals[i]) : '');
       return row;
     }).filter(r => r[headers[0]]);
+  } else {
+    // Text path: Blackboard .xls exports are tab-separated UTF-16LE text, not real binary
+    try {
+      const text  = await readAsText(file, 'UTF-16LE');
+      const lines = text.split('\n').filter(l => l.trim());
+      const parseLine = l => l.split('\t').map(c => c.replace(/^"|"$/g, '').trim());
+      headers = parseLine(lines[0]);
+      rows = lines.slice(1).map(line => {
+        const vals = parseLine(line);
+        const row  = {};
+        headers.forEach((h, i) => row[h] = vals[i] || '');
+        return row;
+      }).filter(r => r[headers[0]]);
+    } catch {
+      // Fallback to binary XLSX parser for any other format
+      const buf = await readAsArrayBuffer(file);
+      const wb  = XLSX.read(buf, { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      headers   = (raw[0] || []).map(String);
+      rows = raw.slice(1).map(vals => {
+        const row = {};
+        headers.forEach((h, i) => row[h] = vals[i] !== undefined ? String(vals[i]) : '');
+        return row;
+      }).filter(r => r[headers[0]]);
+    }
   }
 
   finalFileData    = rows;
@@ -431,15 +469,21 @@ function letterGrade(total) {
 
 
 function processGrades() {
-  const finalSource = document.querySelector('input[name="finalSource"]:checked')?.value || 'bb';
-  const hasFinal    = finalSource !== 'none';
-  const hasExtra    = document.getElementById('hasExtraCredit').checked;
+  const finalSource    = document.querySelector('input[name="finalSource"]:checked')?.value || 'bb';
+  const hasFinal       = finalSource !== 'none';
+  const hasExtra       = document.getElementById('hasExtraCredit').checked;
+  const zeroMissing    = document.getElementById('zeroMissingStudents')?.checked ?? false;
+  const roundingMode   = document.getElementById('roundingMode')?.value || 'round';
 
-  const midtermWeight = parseFloat(document.getElementById('midtermWeight').value) || 60;
-  const finalWeight   = parseFloat(document.getElementById('finalWeight').value)   || 40;
-  const midMax        = parseFloat(document.getElementById('midtermMax').value);
-  const finalMax      = parseFloat(document.getElementById('finalMax').value);
-  const extraCap = parseFloat(document.getElementById('extraCreditCap').value) || Infinity;
+  const midtermWeight  = parseFloat(document.getElementById('midtermWeight').value) || 60;
+  const finalWeight    = parseFloat(document.getElementById('finalWeight').value)   || 40;
+  const midMax         = parseFloat(document.getElementById('midtermMax').value);
+  const finalMax       = parseFloat(document.getElementById('finalMax').value);
+  const extraCap       = parseFloat(document.getElementById('extraCreditCap').value) || Infinity;
+  // Max points for a separate final-exam file.
+  // If left blank, defaults to finalWeight (assumes file grades are already on the same scale).
+  const _finalFileMaxRaw = parseFloat(document.getElementById('finalFileMax')?.value);
+  const finalFileMaxVal  = (!isNaN(_finalFileMaxRaw) && _finalFileMaxRaw > 0) ? _finalFileMaxRaw : finalWeight;
 
   const selectedMidCols = [];
   const selectedFinCols = [];
@@ -450,7 +494,7 @@ function processGrades() {
   if (hasExtra)
     document.querySelectorAll('#extraCreditCols input[type=checkbox]:checked').forEach(cb => selectedExtCols.push(cb.dataset.col));
 
-  // Validation
+  // ── Validation ────────────────────────────────────────────────────────────
   if (selectedMidCols.length === 0)                        { alert(t('errMidCol')); return; }
   if (isNaN(midMax) || midMax <= 0)                        { alert(t('errMidMax')); return; }
   if (hasFinal && finalSource === 'bb') {
@@ -462,6 +506,7 @@ function processGrades() {
     const sc = document.getElementById('finalFileStudentCol').value;
     const gc = document.getElementById('finalFileGradeCol').value;
     if (!sc || !gc)                                        { alert(t('errFinFileCol')); return; }
+    // finalFileMaxVal always has a valid value (defaults to finalWeight if blank)
   }
 
   // Detect username column in Blackboard
@@ -469,7 +514,7 @@ function processGrades() {
     k.includes('اسم المستخدم') || k.toLowerCase().includes('username')
   );
 
-  // Build separate-file final lookup (student num → raw grade)
+  // Build separate-file final lookup: normalised student ID → raw grade
   const finalFileLookup = {};
   if (hasFinal && finalSource === 'file' && finalFileData) {
     const sc = document.getElementById('finalFileStudentCol').value;
@@ -482,7 +527,7 @@ function processGrades() {
     });
   }
 
-  // Build Blackboard lookup: student num → { midterm, final (BB), extraCredit }
+  // Build Blackboard lookup: student ID → { midterm (scaled), final (scaled), extra }
   const bbLookup = {};
   bbData.forEach(row => {
     const num = normalizeNum(row[usernameKey]);
@@ -501,6 +546,7 @@ function processGrades() {
       selectedExtCols.forEach(col => { const v = parseFloat(row[col]); if (!isNaN(v)) extSum += v; });
     }
 
+    // Scale: (student_score / bb_max) * university_weight
     bbLookup[num] = {
       midterm: midHas ? (midSum / midMax) * midtermWeight : null,
       final:   (hasFinal && finalSource === 'bb' && finHas) ? (finSum / finalMax) * finalWeight : null,
@@ -508,7 +554,14 @@ function processGrades() {
     };
   });
 
-  // Load university grader rows (strip metadata header rows)
+  // ── Info messages: BB max differs from university weight (non-blocking) ────
+  const infoMsgs = [];
+  if (!isNaN(midMax) && midMax !== midtermWeight)
+    infoMsgs.push(t('infoMaxMid', midMax, midtermWeight));
+  if (hasFinal && finalSource === 'bb' && !isNaN(finalMax) && finalMax !== finalWeight)
+    infoMsgs.push(t('infoMaxFin', finalMax, finalWeight));
+
+  // ── Load university grade-sheet rows ──────────────────────────────────────
   const sheetName = ugWorkbook.SheetNames[0];
   const srcSheet  = ugWorkbook.Sheets[sheetName];
   const allRows   = XLSX.utils.sheet_to_json(srcSheet, { header: 1, defval: '' });
@@ -521,7 +574,10 @@ function processGrades() {
   const colTotal      = hdr.findIndex(c => String(c).includes('الدرجة') && !String(c).includes('نهائي') && !String(c).includes('فصلي'));
   const colGrade      = hdr.findIndex(c => String(c).includes('التقدير'));
 
-  let matched = 0, zeroed = 0, totalStudents = 0;
+  let matched = 0, partial = 0, zeroed = 0, totalStudents = 0;
+  // Track students missing from the separate final-exam file
+  let finalFileMatched = 0;
+  const finalFileMissedStudents = [];
   const tableRows = [];
 
   for (let i = 1; i < cleanRows.length; i++) {
@@ -545,31 +601,61 @@ function processGrades() {
     const grades = bbLookup[studentNum];
 
     if (!grades) {
+      // Student is in the university file but not in Blackboard
       zeroed++;
-      if (colMidterm >= 0)            cleanRows[i][colMidterm] = 0;
-      if (hasFinal && colFinal >= 0)  cleanRows[i][colFinal]   = 0;
-      if (colTotal >= 0)              cleanRows[i][colTotal]   = 0;
-      if (colGrade >= 0)              cleanRows[i][colGrade]   = 'F';
-      tableRows.push({ num: studentNum, name: studentName, mid: 0, fin: hasFinal ? 0 : '—', extra: hasExtra ? 0 : '—', total: 0, grade: 'F', status: 'missing' });
+      if (zeroMissing) {
+        if (colMidterm >= 0)            cleanRows[i][colMidterm] = 0;
+        if (hasFinal && colFinal >= 0)  cleanRows[i][colFinal]   = 0;
+        if (colTotal >= 0)              cleanRows[i][colTotal]   = 0;
+        if (colGrade >= 0)              cleanRows[i][colGrade]   = 'F';
+        tableRows.push({ num: studentNum, name: studentName, mid: 0, fin: hasFinal ? 0 : '—', extra: hasExtra ? 0 : '—', total: 0, grade: 'F', status: 'missing' });
+      } else {
+        // Leave original university-file values unchanged; flag as missing only
+        const origMid   = colMidterm >= 0 ? row[colMidterm] : '—';
+        const origFin   = colFinal   >= 0 ? row[colFinal]   : '—';
+        const origTotal = colTotal   >= 0 ? row[colTotal]   : '—';
+        const origGrade = colGrade   >= 0 ? row[colGrade]   : '—';
+        tableRows.push({ num: studentNum, name: studentName, mid: origMid, fin: hasFinal ? origFin : '—', extra: '—', total: origTotal, grade: origGrade, status: 'missing' });
+      }
       continue;
     }
 
-    matched++;
-    const midVal = grades.midterm !== null ? Math.ceil(grades.midterm) : 0;
+    // Scale midterm: (score / bbMax) * uniWeight, then apply chosen rounding
+    const midVal = grades.midterm !== null
+      ? Math.min(midtermWeight, roundGrade(grades.midterm, roundingMode))
+      : 0;
 
-    // Final: from BB or from separate file
+    // Final grade: from Blackboard columns or from a separate file
     let finVal = 0;
+    // 'partial' = found in BB but final-file grade is missing → not fully updated
+    let studentStatus = 'ok';
+
     if (hasFinal) {
       if (finalSource === 'bb') {
-        finVal = grades.final !== null ? Math.ceil(grades.final) : 0;
+        finVal = grades.final !== null
+          ? Math.min(finalWeight, roundGrade(grades.final, roundingMode))
+          : 0;
       } else {
+        // Scale the raw score from the separate file: (raw / fileMax) * uniWeight
         const rawFin = finalFileLookup[studentNum];
-        finVal = rawFin !== undefined ? Math.ceil(rawFin) : 0;
+        if (rawFin !== undefined) {
+          finalFileMatched++;
+          finVal = Math.min(finalWeight, roundGrade((rawFin / finalFileMaxVal) * finalWeight, roundingMode));
+        } else {
+          // In BB but no entry in the final-exam file → partial record
+          finalFileMissedStudents.push(studentNum);
+          studentStatus = 'partial';
+          finVal = 0;
+        }
       }
     }
 
+    // Count fully-updated vs partial separately so the summary is accurate
+    if (studentStatus === 'ok') matched++;
+    else                        partial++;
+
     const extraVal = hasExtra ? grades.extra : 0;
-    const total    = Math.ceil(midVal + (hasFinal ? finVal : 0) + extraVal);
+    const total    = Math.min(100, roundGrade(midVal + (hasFinal ? finVal : 0) + extraVal, roundingMode));
 
     if (colMidterm >= 0)            cleanRows[i][colMidterm] = midVal;
     if (hasFinal && colFinal >= 0)  cleanRows[i][colFinal]   = finVal;
@@ -582,29 +668,33 @@ function processGrades() {
       mid: midVal,
       fin: hasFinal ? finVal : '—',
       extra: hasExtra ? extraVal : '—',
-      total, grade: lg, status: 'ok'
+      total, grade: lg, status: studentStatus
     });
   }
 
-  // Output columns — only student number, name, midterm, final
+  // ── Final-file match check ─────────────────────────────────────────────────
+  // If every eligible student is missing from the final file, something is wrong
+  // (wrong column selected, wrong file, or ID format mismatch). Block and warn.
+  if (hasFinal && finalSource === 'file' && matched > 0 && finalFileMatched === 0) {
+    alert(t('errFinFileNoMatch'));
+    return;
+  }
+
+  // ── Output workbook ────────────────────────────────────────────────────────
   const keepCols = [colStudentNum, 1, colMidterm];
   if (hasFinal && colFinal >= 0) keepCols.push(colFinal);
 
   const dataRows = cleanRows.slice(1).map(row => keepCols.map(c => row[c] !== undefined ? row[c] : ''));
 
-  // Custom header with percentages
+  // Custom header with grade-distribution percentages
   const midPct = Math.round(midtermWeight);
   const finPct = Math.round(finalWeight);
-  const header = [
-    'رقم الطالب',
-    'اسم الطالب',
-    `فصلي (${midPct}%)`,
-  ];
+  const header = ['رقم الطالب', 'اسم الطالب', `فصلي (${midPct}%)`];
   if (hasFinal) header.push(`نهائي (${finPct}%)`);
 
   const outputRows = [header, ...dataRows];
 
-  // Map student number → output row index (skip header row 0)
+  // Map student ID → output row index (for in-place midterm edits)
   const numToOutputRow = {};
   for (let i = 1; i < outputRows.length; i++) {
     const num = normalizeNum(outputRows[i][0]);
@@ -616,11 +706,14 @@ function processGrades() {
   XLSX.utils.book_append_sheet(resultWorkbook, newSheet, sheetName);
 
   // ── Save results state and render ─────────────────────────────────────────
-
-  const missingStudents = tableRows.filter(r => r.status === 'missing').map(r => r.num);
+  const missingStudents  = tableRows.filter(r => r.status === 'missing').map(r => r.num);
   const midtermWeightVal = parseFloat(document.getElementById('midtermWeight').value) || 60;
-  lastResults = { totalStudents, matched, zeroed, missingStudents, tableRows, hasFinal, hasExtra,
-                  outputRows, numToOutputRow, sheetName, midtermWeight: midtermWeightVal };
+  lastResults = {
+    totalStudents, matched, partial, zeroed, missingStudents, tableRows, hasFinal, hasExtra,
+    outputRows, numToOutputRow, sheetName, midtermWeight: midtermWeightVal,
+    infoMsgs,
+    finalFileMissedStudents,  // students found in BB but missing from the final file
+  };
 
   renderStep3();
   document.getElementById('step3').classList.add('visible');
@@ -629,11 +722,22 @@ function processGrades() {
 
 function renderStep3() {
   if (!lastResults) return;
-  const { totalStudents, matched, zeroed, missingStudents, tableRows, hasFinal, hasExtra } = lastResults;
+  const { totalStudents, matched, partial, zeroed, missingStudents, tableRows, hasFinal, hasExtra,
+          infoMsgs, finalFileMissedStudents } = lastResults;
+  const excusedCount = tableRows.filter(r => r.status === 'excused').length;
 
   document.getElementById('noteBox').textContent = t('noteCheck');
 
-  document.getElementById('summaryGrid').innerHTML = `
+  // Non-blocking info: BB max differs from university weight
+  const maxInfoEl = document.getElementById('maxInfoAlert');
+  if (maxInfoEl) {
+    maxInfoEl.innerHTML = (infoMsgs && infoMsgs.length > 0)
+      ? `<div class="alert alert-info">${infoMsgs.map(m => `<div>${m}</div>`).join('')}</div>`
+      : '';
+  }
+
+  // Build summary — partial box only appears when a separate final file is used
+  let summaryHtml = `
     <div class="summary-box">
       <div class="num">${totalStudents}</div>
       <div class="lbl">${t('totalStudents')}</div>
@@ -641,18 +745,54 @@ function renderStep3() {
     <div class="summary-box">
       <div class="num" style="color:#16a34a">${matched}</div>
       <div class="lbl">${t('updated')}</div>
-    </div>
+    </div>`;
+
+  if (partial > 0) {
+    summaryHtml += `
+    <div class="summary-box">
+      <div class="num" style="color:#d97706">${partial}</div>
+      <div class="lbl">${t('partialUpdate')}</div>
+    </div>`;
+  }
+
+  summaryHtml += `
     <div class="summary-box">
       <div class="num" style="color:#dc2626">${zeroed}</div>
       <div class="lbl">${t('notFound')}</div>
     </div>`;
 
-  document.getElementById('missingAlert').innerHTML = missingStudents.length > 0
-    ? `<div class="alert alert-warning">
-        <strong>${t('warnTitle')}:</strong> ${t('warnMsg')}
-        <ul class="missing-list">${missingStudents.map(s => `<li>${s}</li>`).join('')}</ul>
-       </div>`
-    : `<div class="alert alert-info">${t('successMsg')}</div>`;
+  if (excusedCount > 0) {
+    summaryHtml += `
+    <div class="summary-box">
+      <div class="num" style="color:#6b7280">${excusedCount}</div>
+      <div class="lbl">${t('excusedCount')}</div>
+    </div>`;
+  }
+
+  document.getElementById('summaryGrid').innerHTML = summaryHtml;
+
+  // Build the alerts block
+  let alertsHtml = '';
+
+  // Students missing from Blackboard
+  if (missingStudents.length > 0) {
+    alertsHtml += `<div class="alert alert-warning">
+      <strong>${t('warnTitle')}:</strong> ${t('warnMsg')}
+      <ul class="missing-list">${missingStudents.map(s => `<li>${s}</li>`).join('')}</ul>
+    </div>`;
+  } else {
+    alertsHtml += `<div class="alert alert-info">${t('successMsg')}</div>`;
+  }
+
+  // Students found in Blackboard but missing from the separate final-exam file
+  if (finalFileMissedStudents && finalFileMissedStudents.length > 0) {
+    alertsHtml += `<div class="alert alert-warning">
+      <strong>${t('warnTitle')}:</strong> ${t('warnFinFileMissed', finalFileMissedStudents.length)}
+      <ul class="missing-list">${finalFileMissedStudents.map(s => `<li>${s}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  document.getElementById('missingAlert').innerHTML = alertsHtml;
 
   const finTh   = hasFinal ? `<th class="col-num">${t('tblFin')}</th>`   : '';
   const extraTh = hasExtra ? `<th class="col-num">${t('tblExtra')}</th>` : '';
@@ -694,6 +834,7 @@ function renderStep3() {
         <select id="filterStatus" class="col-filter-select" onchange="filterTable()">
           <option value="">${t('filterStatusAll')}</option>
           <option value="ok">${t('statusOk')}</option>
+          <option value="partial">${t('statusPartial')}</option>
           <option value="missing">${t('statusMissing')}</option>
           <option value="excused">${t('statusExcused')}</option>
         </select>
@@ -720,13 +861,20 @@ function renderTableRows(rows) {
   const { hasFinal, hasExtra, midtermWeight } = lastResults;
   document.getElementById('gradeTableBody').innerHTML = rows.map((r, idx) => {
     const rowIdx  = lastResults.tableRows.indexOf(r);
-    const finTd   = hasFinal ? `<td class="col-num ${r.status === 'excused' ? 'excused' : (r.fin === 0 && r.status !== 'ok' ? 'zero' : '')}">${r.fin}</td>` : '';
+    // fin cell: highlight zero when data is genuinely missing (not just a zero score)
+    const finMissing = r.status === 'partial';
+    const finTd   = hasFinal ? `<td class="col-num ${r.status === 'excused' ? 'excused' : (finMissing ? 'zero' : '')}">${r.fin}</td>` : '';
     const extraTd = hasExtra ? `<td class="col-num">${r.extra}</td>` : '';
     const isPass     = typeof r.total === 'number' && r.total >= 60 && r.status !== 'excused';
-    const colorClass = r.status === 'excused' ? 'excused' : (isPass ? 'pass' : 'fail');
-    const statusLbl  = r.status === 'ok' ? t('statusOk') : r.status === 'missing' ? t('statusMissing') : t('statusExcused');
+    const colorClass = r.status === 'excused' ? 'excused'
+                     : r.status === 'partial'  ? 'partial'
+                     : (isPass ? 'pass' : 'fail');
+    const statusLbl  = r.status === 'ok'      ? t('statusOk')
+                     : r.status === 'partial'  ? t('statusPartial')
+                     : r.status === 'missing'  ? t('statusMissing')
+                     :                           t('statusExcused');
     const hlClass    = rowHighlightClass(r);
-    const midClass   = r.status === 'excused' ? 'excused' : (r.mid === 0 && r.status !== 'ok' ? 'zero' : '');
+    const midClass   = r.status === 'excused' ? 'excused' : (r.mid === 0 && r.status !== 'ok' && r.status !== 'partial' ? 'zero' : '');
     const canEdit    = r.status !== 'excused' && r.status !== 'missing';
     const editBtn    = canEdit
       ? `<button class="btn-edit-mid" onclick="startEditMid(this, ${rowIdx}, ${midtermWeight})" title="${t('editMidTitle')}">✏️</button>`

@@ -711,6 +711,7 @@ select:focus {
 .grade-letter.pass    { color: #15803d; }
 .grade-letter.fail    { color: #b91c1c; }
 .grade-letter.excused { color: #9ca3af; }
+.grade-letter.partial { color: #b45309; }
 
 /* الحالة — minimal chip */
 .status-chip {
@@ -727,6 +728,7 @@ select:focus {
 .status-chip.pass    { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
 .status-chip.fail    { background: #fff1f2; color: #b91c1c; border: 1px solid #fecdd3; }
 .status-chip.excused { background: #f9fafb; color: #6b7280; border: 1px solid #e5e7eb; }
+.status-chip.partial { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 
